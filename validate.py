@@ -5,7 +5,9 @@ import pandas as pd
 from pymongo import MongoClient
 
 # MongoDB setup
-client = MongoClient("mongodb://localhost:27017/")
+mongo_uri = st.secrets["MONGO_URI"]
+
+client = MongoClient(mongo_uri)
 db = client['geojson_db']  
 collection = db['geojson_files']  
 
