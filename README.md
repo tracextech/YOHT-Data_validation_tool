@@ -37,6 +37,21 @@ Upload a large GeoJSON file.
 Split it into smaller chunks based on the number of splits you specify.
 
 
+# Setup Instructions
+
+# Clone the repository:
+git clone https://github.com/your-repo/geojson-manager.git
+
+# Navigate to the project directory:
+cd geojson-manager
+
+# Install the required dependencies:
+
+pip install -r requirements.txt
+
+# run the streamlit app
+streamlit run validate.py
+
 
 
 # Requirements
