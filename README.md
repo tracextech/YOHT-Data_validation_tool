@@ -40,7 +40,7 @@ Split it into smaller chunks based on the number of splits you specify.
 # Setup Instructions
 
 # Clone the repository:
-git clone https://github.com/your-repo/geojson-manager.git
+git clone https://github.com/tracextech/YOHT-Data_validation_tool.git
 
 # Navigate to the project directory:
 cd geojson-manager
