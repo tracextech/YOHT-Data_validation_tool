@@ -2,3 +2,5 @@ streamlit>=1.0
 pillow>=8.0
 pymongo>=3.11
 pandas>=1.2
+fastapi>=0.95.2  # Or latest stable version of FastAPI
+uvicorn>=0.22.0  # Or latest stable version of Uvicorn
