@@ -1,11 +1,16 @@
+import dotenv
+import os
 # Below code is for all the pages of streamlit 
 import streamlit as st
 import json
 import pandas as pd
 from pymongo import MongoClient
 
+
+dotenv.load_dotenv()
+
 # MongoDB setup
-mongo_uri = st.secrets["MONGO_URI"]
+mongo_uri = os.getenv('MONGO_URI')
 
 client = MongoClient(mongo_uri)
 db = client['geojson_db']  
