@@ -10,7 +10,7 @@ from pymongo import MongoClient
 dotenv.load_dotenv()
 
 # MongoDB setup
-mongo_uri = os.getenv('MONGO_URI')
+mongo_uri = os.getenv('DB_URI')
 
 client = MongoClient(mongo_uri)
 db = client['geojson_db']  
