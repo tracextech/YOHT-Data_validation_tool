@@ -1,11 +1,11 @@
 import dotenv
 import os
-# Below code is for all the pages of streamlit 
 import streamlit as st
 import json
 import pandas as pd
 from pymongo import MongoClient
-
+import hashlib
+import io
 
 dotenv.load_dotenv()
 
@@ -24,7 +24,7 @@ def set_page(page_num):
 def delete_all_files():
     all_files = collection.find({})
     deleted_bls = []
-
+    
     # to collect BL_LR_IF from the documents
     for file in all_files:
         bl_lr_if = file.get('BL_LR_IF', 'Unknown BL_LR_IF')
@@ -129,6 +129,8 @@ def page_1():
 
     aligned_buttons(alignment="center")  
 
+    if st.button("Refresh"):
+        st.rerun()
 
 # Page 2, GeoJSON Mapper( BL is mapped to geojson file): one BL can have only one geojson
 def page_2():
@@ -183,7 +185,7 @@ def page_2():
                         type=["geojson","json"],
                         key=f'geojson_upload_{idx}'
                     )
-                    22
+                    
                 with col2:
                     st.markdown("<br>", unsafe_allow_html=True)
                     st.button(
@@ -402,85 +404,122 @@ def is_duplicate_feature(new_feature, merged_features):
             return True  # Duplicate found
     return False  # No duplicates
 
-
-
-
-
-# Page 4: Data Comparison, two geojson files are compared
+# function to compare the geojson files
 def page_4():
     st.title("Page 4 - GeoJSON File Comparison")
-
-    st.write("Upload two GeoJSON files to compare.")
+    st.write("Upload two GeoJSON files to compare individual features.")
 
     message_placeholder = st.empty()
 
-    uploaded_file1 = st.file_uploader("Upload the first GeoJSON file", type=["geojson","json"], key='file1')
-    uploaded_file2 = st.file_uploader("Upload the second GeoJSON file", type=["geojson","json"], key='file2')
+    if 'comparison_done' not in st.session_state:
+        st.session_state['comparison_done'] = False  # Track whether the comparison is done using bool
+        st.session_state['matched_hashes'] = []
+        st.session_state['unmatched_file1'] = []
+        st.session_state['unmatched_file2'] = []
+    
+    uploaded_file1 = st.file_uploader("Upload the first GeoJSON file", type=["geojson", "json"], key='file1')
+    uploaded_file2 = st.file_uploader("Upload the second GeoJSON file", type=["geojson", "json"], key='file2')
 
     if uploaded_file1 is not None and uploaded_file2 is not None:
-        if st.button("Compare Files"):
+        compare_clicked = st.button("Compare Files")
+
+        if compare_clicked:
             try:
                 file1_data = json.load(uploaded_file1)
                 file2_data = json.load(uploaded_file2)
-                
-                # Extract coordinates from both files
-                coordinates_in_file1 = extract_all_coordinates(file1_data)
-                coordinates_in_file2 = extract_all_coordinates(file2_data)
-                
-                # Total features or coordinates
-                total_features_file1 = len(coordinates_in_file1)
-                total_features_file2 = len(coordinates_in_file2)
 
-                # Display total features
-                st.write(f"Total features in File 1: {total_features_file1}")
-                st.write(f"Total features in File 2: {total_features_file2}")
-                
-                # Check if the files are completely identical
-                are_files_identical = file1_data == file2_data
-                if are_files_identical:
-                    message_placeholder.success("The two files are completely identical!")
-                else:
-                    message_placeholder.error("The two files are not identical!")
+                # Extract features from both files
+                features_file1 = file1_data['features']
+                features_file2 = file2_data['features']
 
-                    # Count matched and unmatched coordinates
-                    matched_coords_count = 0
-                    unmatched_coords_count = 0
+                # Report basic details
+                st.write(f"Total features in File 1: {len(features_file1)}")
+                st.write(f"Total features in File 2: {len(features_file2)}")
 
-                    for coord in coordinates_in_file1:
-                        if is_coordinate_in_file(coord, coordinates_in_file2):
-                            matched_coords_count += 1
-                        else:
-                            unmatched_coords_count += 1
+                # Hash features in both files
+                hash_map_file1 = {get_geo_hash(f['geometry']['coordinates'][0]): f for f in features_file1}
+                hash_map_file2 = {get_geo_hash(f['geometry']['coordinates'][0]): f for f in features_file2}
 
-                    # Display summary of results
-                    if matched_coords_count > 0:
-                        message_placeholder.success(f"{matched_coords_count} coordinates from File 1 match with File 2.")
+                matched_features = 0
+                unmatched_features_file1 = 0
+                unmatched_features_file2 = 0
+
+                unmatched_file1 = []
+                unmatched_file2 = list(hash_map_file2.keys())
+                matched_hashes = []
+
+                for hash1, feature1 in hash_map_file1.items():
+                    if hash1 in hash_map_file2:
+                        matched_features += 1
+                        unmatched_file2.remove(hash1)  #Remove from unmatched list
+                        matched_hashes.append(hash1)    #hash values are appended here
                     else:
-                        message_placeholder.warning("No matching coordinates found between the two files.")
+                        unmatched_features_file1 += 1
+                        unmatched_file1.append(hash1)   # unmatched values are appended here
 
-                    if unmatched_coords_count > 0:
-                        message_placeholder.warning(f"{unmatched_coords_count} coordinates in File 1 are not found in File 2.")
+                unmatched_features_file2 = len(unmatched_file2)
+
+                # Store comparison result in session state
+                st.session_state['comparison_done'] = True
+                st.session_state['matched_hashes'] = matched_hashes
+                st.session_state['unmatched_file1'] = unmatched_file1
+                st.session_state['unmatched_file2'] = unmatched_file2
+
+                # Summary Report will generated and displayed in front-end
+                if matched_features == len(features_file1) and matched_features == len(features_file2):
+                    message_placeholder.success(f"Comparison Results: The files are **identical**. All {matched_features} features matched.")
+                else:
+                    message_placeholder.warning(f"Comparison Results: The files are **not identical**.\n {unmatched_features_file1} features in File 1 and {unmatched_features_file2} features in File 2 do not match.")
+
+                st.write(f"Matched Features: {matched_features}")
+                st.write(f"Unmatched Features in File 1: {unmatched_features_file1}")
+                st.write(f"Unmatched Features in File 2: {unmatched_features_file2}")
 
             except json.JSONDecodeError:
                 message_placeholder.error("One or both files are not valid GeoJSON format.")
 
-    aligned_buttons(alignment="right")
+    # detailed report is generated once comparison is done
+    if st.session_state['comparison_done']:
+        report = generate_detailed_report(
+            st.session_state['matched_hashes'], 
+            st.session_state['unmatched_file1'], 
+            st.session_state['unmatched_file2']
+        )
 
+        # download button for the detailed report
+        st.download_button(
+            label="Download Detailed Report",
+            data=report,
+            file_name="geojson_comparison_report.txt",
+            mime="text/plain",
+            key="download_report"
+        )
 
-def extract_all_coordinates(geojson_data):
-    """Extract all coordinates from the GeoJSON features."""
-    coordinates = []
-    for feature in geojson_data['features']:
-        flat_coords = [tuple(coord) for coord in feature['geometry']['coordinates'][0]]  # No sorting needed here
-        coordinates.append(flat_coords)
-    return coordinates
+def get_geo_hash(coordinates):
+    """Sort coordinates and return a SHA-256 hash."""
+    sorted_coordinates = sorted(coordinates, key=lambda x: (x[0], x[1]))
+    flattened_coordinates = ','.join([f"{lat:.6f},{lng:.6f}" for lat, lng in sorted_coordinates])
+    hash_object = hashlib.sha256(flattened_coordinates.encode())
+    return hash_object.hexdigest()
 
+def generate_detailed_report(matched_hashes, unmatched_file1, unmatched_file2):
+    """Generate a detailed comparison report."""
+    report = io.StringIO()
+    report.write("Detailed GeoJSON Comparison Report\n\n")
+    report.write(f"Matched Features: {len(matched_hashes)}\n")
+    report.write("Matched Hashes:\n")
+    for hash_value in matched_hashes:
+        report.write(f"- {hash_value}\n")
 
-def is_coordinate_in_file(coord, all_coords):
-    """Check if a specific coordinate exists in the list of all coordinates."""
-    return coord in all_coords
+    report.write(f"\nUnmatched Features in File 1: {len(unmatched_file1)}\n")
+    for hash_value in unmatched_file1:
+        report.write(f"- {hash_value}\n")
 
+    report.write(f"\nUnmatched Features in File 2: {len(unmatched_file2)}\n")
+    for hash_value in unmatched_file2:
+        report.write(f"- {hash_value}\n")
 
+    return report.getvalue()
 
 
 # Page 5: GeoJSON Splitter, to split the geojson file into multiple files based on number of splits
