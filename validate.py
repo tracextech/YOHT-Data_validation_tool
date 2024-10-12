@@ -412,7 +412,7 @@ def page_4():
     message_placeholder = st.empty()
 
     if 'comparison_done' not in st.session_state:
-        st.session_state['comparison_done'] = False  # Track whether the comparison is done using bool
+        st.session_state['comparison_done'] = False  # Track whether the comparison is done
         st.session_state['matched_hashes'] = []
         st.session_state['unmatched_file1'] = []
         st.session_state['unmatched_file2'] = []
@@ -437,8 +437,8 @@ def page_4():
                 st.write(f"Total features in File 2: {len(features_file2)}")
 
                 # Hash features in both files
-                hash_map_file1 = {get_geo_hash(f['geometry']['coordinates'][0]): f for f in features_file1}
-                hash_map_file2 = {get_geo_hash(f['geometry']['coordinates'][0]): f for f in features_file2}
+                hash_map_file1 = {get_geo_hash(f['geometry']['coordinates'], f['geometry']['type']): f for f in features_file1}
+                hash_map_file2 = {get_geo_hash(f['geometry']['coordinates'], f['geometry']['type']): f for f in features_file2}
 
                 matched_features = 0
                 unmatched_features_file1 = 0
@@ -451,11 +451,11 @@ def page_4():
                 for hash1, feature1 in hash_map_file1.items():
                     if hash1 in hash_map_file2:
                         matched_features += 1
-                        unmatched_file2.remove(hash1)  #Remove from unmatched list
-                        matched_hashes.append(hash1)    #hash values are appended here
+                        unmatched_file2.remove(hash1)  # Remove from unmatched list
+                        matched_hashes.append(hash1)
                     else:
                         unmatched_features_file1 += 1
-                        unmatched_file1.append(hash1)   # unmatched values are appended here
+                        unmatched_file1.append(hash1)
 
                 unmatched_features_file2 = len(unmatched_file2)
 
@@ -465,11 +465,11 @@ def page_4():
                 st.session_state['unmatched_file1'] = unmatched_file1
                 st.session_state['unmatched_file2'] = unmatched_file2
 
-                # Summary Report will generated and displayed in front-end
+                # Summary Report
                 if matched_features == len(features_file1) and matched_features == len(features_file2):
                     message_placeholder.success(f"Comparison Results: The files are **identical**. All {matched_features} features matched.")
                 else:
-                    message_placeholder.warning(f"Comparison Results: The files are **not identical**.\n {unmatched_features_file1} features in File 1 and {unmatched_features_file2} features in File 2 do not match.")
+                    message_placeholder.warning(f"Comparison Results: The files are **not identical**. {unmatched_features_file1} features in File 1 and {unmatched_features_file2} features in File 2 do not match.")
 
                 st.write(f"Matched Features: {matched_features}")
                 st.write(f"Unmatched Features in File 1: {unmatched_features_file1}")
@@ -478,7 +478,7 @@ def page_4():
             except json.JSONDecodeError:
                 message_placeholder.error("One or both files are not valid GeoJSON format.")
 
-    # detailed report is generated once comparison is done
+    # Generate the detailed report if comparison is done
     if st.session_state['comparison_done']:
         report = generate_detailed_report(
             st.session_state['matched_hashes'], 
@@ -486,7 +486,7 @@ def page_4():
             st.session_state['unmatched_file2']
         )
 
-        # download button for the detailed report
+        # Download button for the detailed report
         st.download_button(
             label="Download Detailed Report",
             data=report,
@@ -495,13 +495,41 @@ def page_4():
             key="download_report"
         )
 
-def get_geo_hash(coordinates):
-    """Sort coordinates and return a SHA-256 hash."""
-    sorted_coordinates = sorted(coordinates, key=lambda x: (x[0], x[1]))
+# Function to flatten coordinates for Polygon and MultiPolygon
+def flatten_coordinates(coordinates, geom_type):
+    """Recursively flatten the coordinates, handling Polygon and MultiPolygon geometries."""
+    flat_coords = []
+
+    if geom_type == "Polygon":
+        # For Polygon, coordinates is a list of linear rings (outer boundary, holes)
+        for ring in coordinates:
+            flat_coords.extend(ring)
+    elif geom_type == "MultiPolygon":
+        # For MultiPolygon, it's a list of polygons, each containing linear rings
+        for polygon in coordinates:
+            for ring in polygon:
+                flat_coords.extend(ring)
+
+    return flat_coords
+
+# Function to hash the flattened coordinates
+def get_geo_hash(coordinates, geom_type):
+    """Handle both Polygon and MultiPolygon geometries and return a SHA-256 hash."""
+    
+    # Flatten the coordinates based on geometry type
+    flat_coords = flatten_coordinates(coordinates, geom_type)
+    
+    # Sort coordinates by latitude and longitude
+    sorted_coordinates = sorted(flat_coords, key=lambda x: (x[0], x[1]))
+    
+    # Flatten to a string for hashing
     flattened_coordinates = ','.join([f"{lat:.6f},{lng:.6f}" for lat, lng in sorted_coordinates])
+    
+    # Create the hash
     hash_object = hashlib.sha256(flattened_coordinates.encode())
     return hash_object.hexdigest()
 
+# Generate the detailed comparison report
 def generate_detailed_report(matched_hashes, unmatched_file1, unmatched_file2):
     """Generate a detailed comparison report."""
     report = io.StringIO()
